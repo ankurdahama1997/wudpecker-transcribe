@@ -1,9 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 import os 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 
-from google_calendar_integration.celery_config import celery_app, start_watch
+from google_calendar_integration.celery_config import celery_app, start_watch, incoming_ping
 
 load_dotenv()
 
@@ -19,6 +19,15 @@ async def watch(user_uuid: str, callback: str = Query(None), token: str = Query(
     return {"task_id": task.id}
 
 
+@app.post("/ping")
+async def ping(request: Request):
+    
+    
+    channel_id = request.headers.get("x-goog-channel-id", "")
+    print(channel_id)
+    task = incoming_ping.delay(channel_id)
+    print(task.id)
+    return {"task_id": task.id}
 
 
 
@@ -30,4 +39,5 @@ async def get_task_status(task_id: str):
     elif task.state != "FAILURE":
         return {"status": task.state, "result": task.result}
     else:
-        raise HTTPException(status_code=400, detail=str(task.result))
+        return task.state
+    

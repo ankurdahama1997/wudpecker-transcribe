@@ -1,0 +1,22 @@
+version: "3.8"
+services:
+  google_calendar_integration:
+    build:
+      context: ./
+      dockerfile: Dockerfile.local
+    container_name: google_calendar_integration
+    env_file:
+      - .env
+    privileged: true
+
+    volumes:
+      - /dev/shm:/dev/shm
+      - ./:/app
+    ports:
+      - "8080:8080"
+
+
+    command: ["sh", "./docker-entrypoint-dev.sh"]
+
+volumes:
+  psql: null

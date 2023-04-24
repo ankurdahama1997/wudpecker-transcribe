@@ -1,5 +1,9 @@
 version: "3.8"
 services:
+  redis:
+      image: 'redis:latest'
+      ports:
+        - '6379:6379'
   google_calendar_integration:
     build:
       context: ./
@@ -15,6 +19,8 @@ services:
     ports:
       - "8080:8080"
 
+    depends_on:
+      - redis
 
     command: ["sh", "./docker-entrypoint-dev.sh"]
 

@@ -14,20 +14,21 @@ def root():
     return {"message": "Things work"}
 
 @app.get("/watch/{user_uuid}")
-async def watch(user_uuid: str, callback: str = Query(None), token: str = Query(None)):
-    task = start_watch.delay(token, callback, user_uuid)
+async def watch(user_uuid: str, token: str = Query(None)):
+    task = start_watch.delay(token, user_uuid)
     return {"task_id": task.id}
 
 
 @app.post("/ping")
 async def ping(request: Request):
-    
-    
     channel_id = request.headers.get("x-goog-channel-id", "")
-    print(channel_id)
     task = incoming_ping.delay(channel_id)
-    print(task.id)
     return {"task_id": task.id}
+
+
+@app.post("/health")
+def health():
+    return "OK"
 
 
 

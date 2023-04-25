@@ -16,8 +16,8 @@ load_dotenv()
 
 celery_app = Celery(
     "google-calendar-integration",
-    broker="redis://localhost:6379",
-    backend="redis://localhost:6379",
+    broker=f"redis://{os.getenv('REDIS_URL')}:6379/0",
+    backend=f"redis://{os.getenv('REDIS_URL')}:6379/0",
 )
 
 celery_app.conf.task_routes = {
@@ -25,7 +25,8 @@ celery_app.conf.task_routes = {
 }
 
 @celery_app.task
-def start_watch(refresh_token, callback, user_uuid):
+def start_watch(refresh_token, user_uuid):
+    callback = os.getenv("WATCH_CALLBACK_URL")
     new_uuid = str(uuid.uuid4())
     watch_body = json.dumps({
         "id": new_uuid,
@@ -47,10 +48,9 @@ def start_watch(refresh_token, callback, user_uuid):
     request_watch = requests.post(watch_url, data=watch_body, headers={'Content-Type': 'x-www-form-url-encoded', 'Authorization': token_type + " " + token})
     response_watch = json.loads(request_watch.text)
     response = {}
-    response["uuid"] = user_uuid
-    response["google_sync"] = ""
-    response["google_channel"] = response_watch.get('id','')
-    response["google_expiry"] = response_watch.get('expiration',1)
+    response["uuid"] = user_uuid.rstrip()
+    response["google_channel"] = response_watch.get('id','').rstrip()
+    response["google_expiry"] = response_watch.get('expiration',1).rstrip()
     
     response_request = requests.post(callback, data=response)
     return response
@@ -62,7 +62,10 @@ def incoming_ping(channel_id):
         
     user_request = requests.get(os.getenv("TOKEN_URL") + f"{channel_id}/")
     user = json.loads(user_request.text)
-    user_uuid = user.get("uuid", "aa")
+    try:
+        user_uuid = user.get("uuid", "aa")
+    except:
+        return "OK"
     sync_token = user.get("sync", "")
     refresh_token = user.get("refresh", "")
 
@@ -138,7 +141,8 @@ def fetch_changed_events(sync_token, refresh_token):
         time_max = now + timedelta(days=20)
 
 
-        for _ in range(100):
+        for i in range(1000):
+            print(i)
             # Get the updated events using sync token
             now = datetime.now(timezone.utc)
             
@@ -157,7 +161,8 @@ def fetch_changed_events(sync_token, refresh_token):
                                                 link,
                                                 event['start'].get('dateTime', event['start'].get('date')),
                                                 event.get('summary', ''),
-                                                [attendee['email'] for attendee in event.get('attendees', [])]]})
+                                                event.get('organizer', {}),
+                                                [attendee['email'] for attendee in event.get('attendees', []) if "resource.calendar.google.com" not in attendee['email']]]})
 
             # If there is a nextPageToken, update the sync_token variable and continue the loop
             if 'nextPageToken' in events_results:

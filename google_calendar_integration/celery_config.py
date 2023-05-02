@@ -11,6 +11,7 @@ import google_auth_oauthlib.flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from datetime import datetime, timezone, timedelta
+
 load_dotenv()
 
 
@@ -53,6 +54,7 @@ def start_watch(refresh_token, user_uuid):
     response["google_expiry"] = response_watch.get('expiration',1).rstrip()
     
     response_request = requests.post(callback, data=response)
+    print(response_request)
     return response
 
 
@@ -65,16 +67,14 @@ def incoming_ping(channel_id):
     try:
         user_uuid = user.get("uuid", "aa")
     except:
-        return "OK"
-    sync_token = user.get("sync", "")
+        return "Channel not found"
     refresh_token = user.get("refresh", "")
 
-    formatted_changed_events, next_sync = fetch_changed_events(sync_token, refresh_token)
+    formatted_changed_events = fetch_changed_events(refresh_token)
 
-    request_callback_ping = requests.post(os.getenv("EVENT_PING_CALLBACK_URL"), json={"channel": channel_id, "next_sync":next_sync, "uuid": user_uuid, "tasks": formatted_changed_events})
+    request_callback_ping = requests.post(os.getenv("EVENT_PING_CALLBACK_URL"), json={"channel": channel_id, "uuid": user_uuid, "tasks": formatted_changed_events})
 
-    return "OK"
-
+    return f"{len(formatted_changed_events)} tasks found with at channel: {channel_id}"
 
 ######################
 ## HELPER FUNCTIONS ##
@@ -117,7 +117,7 @@ def is_within_time_range(event_start, time_min, time_max):
 
 
 
-def fetch_changed_events(sync_token, refresh_token):
+def fetch_changed_events(refresh_token):
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_SECRET")
 
@@ -132,22 +132,23 @@ def fetch_changed_events(sync_token, refresh_token):
     calendar_id = 'primary'
 
     try:
-        # Get the updated events using sync token
 
         tasks = []
         page_token = None
         now = datetime.now(timezone.utc)
         time_min = now
-        time_max = now + timedelta(days=20)
+        time_max = now + timedelta(days=40)
 
 
-        for i in range(1000):
-            print(i)
-            # Get the updated events using sync token
+        for i in range(100):
             now = datetime.now(timezone.utc)
-            
-            
-            events_results = service.events().list(calendarId=calendar_id, syncToken=sync_token,
+            now_utc = datetime.utcnow()
+            yesterday_utc = now_utc - timedelta(days=1)
+            time_min_utc = yesterday_utc.isoformat() + 'Z'
+            time_max_utc = (now_utc + timedelta(days=3)).isoformat() + 'Z'
+
+
+            events_results = service.events().list(calendarId=calendar_id, timeMin=time_min_utc, timeMax=time_max_utc,
                                                    showDeleted=True, pageToken=page_token, singleEvents=True).execute()
 
             for event in events_results['items']:
@@ -164,7 +165,6 @@ def fetch_changed_events(sync_token, refresh_token):
                                                 event.get('organizer', {}),
                                                 [attendee['email'] for attendee in event.get('attendees', []) if "resource.calendar.google.com" not in attendee['email']]]})
 
-            # If there is a nextPageToken, update the sync_token variable and continue the loop
             if 'nextPageToken' in events_results:
                 page_token = events_results['nextPageToken']
             else:
@@ -172,7 +172,7 @@ def fetch_changed_events(sync_token, refresh_token):
 
 
 
-        return tasks, events_results['nextSyncToken']
+        return tasks
     except HttpError as error:
         print(f'An error occurred: {error}')
         return None, None

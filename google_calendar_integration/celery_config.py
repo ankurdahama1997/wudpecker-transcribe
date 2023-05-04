@@ -73,11 +73,8 @@ def incoming_ping(channel_id):
     formatted_changed_events = fetch_changed_events(refresh_token)
 
     request_callback_ping = requests.post(os.getenv("EVENT_PING_CALLBACK_URL"), json={"channel": channel_id, "uuid": user_uuid, "tasks": formatted_changed_events})
-
-    try:
-        return f"{len(formatted_changed_events)} tasks found with at channel: {channel_id} \n\n {json.dumps(formatted_changed_events)}"
-    except:
-        return f"{len(formatted_changed_events)} tasks found with at channel: {channel_id}"
+    
+    return f"{len(formatted_changed_events)} tasks found with at channel: {channel_id}"
 
 ######################
 ## HELPER FUNCTIONS ##

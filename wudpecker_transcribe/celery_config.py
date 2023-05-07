@@ -29,7 +29,7 @@ celery_app.conf.task_routes = {
 
 @celery_app.task
 def create_transcript(call_uuid, url):
-    callback = os.getenv("WATCH_CALLBACK_URL")
+    callback = os.getenv("CREATED_CALLBACK_URL")
 
     azure_req_body = json.dumps(
         {'contentUrls': [url],
@@ -71,7 +71,7 @@ def create_transcript(call_uuid, url):
 
 @celery_app.task
 def get_transcript(url):
-    callback = os.getenv("WATCH_CALLBACK_URL")
+    callback = os.getenv("DONE_CALLBACK_URL")
     headers = {"Ocp-Apim-Subscription-Key": os.getenv('AZURE_KEY')}
 
     get_request = requests.get(url, headers=headers)

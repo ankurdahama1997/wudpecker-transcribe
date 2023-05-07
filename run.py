@@ -1,4 +1,4 @@
 import uvicorn
 
 if __name__ == "__main__":
-    uvicorn.run("google_calendar_integration.main:app", host="0.0.0.0", port=8080, reload=True)
+    uvicorn.run("wudpecker_transcribe.main:app", host="0.0.0.0", port=8080, reload=True)

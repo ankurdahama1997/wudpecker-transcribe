@@ -1,16 +1,8 @@
 from celery import Celery
-import time
-import uuid
 import json
 import os 
 from dotenv import load_dotenv
 import requests
-import re
-import google.oauth2.credentials
-import google_auth_oauthlib.flow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from datetime import datetime, timezone, timedelta
 import boto3
 import isodate
 

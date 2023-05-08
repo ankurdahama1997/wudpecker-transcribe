@@ -4,11 +4,11 @@ services:
       image: 'redis:latest'
       ports:
         - '6379:6379'
-  google_calendar_integration:
+  wudpecker_transcribe:
     build:
       context: ./
       dockerfile: Dockerfile.local
-    container_name: google_calendar_integration
+    container_name: wudpecker_transcribe
     env_file:
       - .env
     privileged: true

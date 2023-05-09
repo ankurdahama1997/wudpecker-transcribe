@@ -88,7 +88,7 @@ def get_transcript(url):
             s3object.put(Body=(bytes(json.dumps(parsed).encode('UTF-8'))))
 
     data = {"uuid": req_obj['displayName'], "status":status}
-    response_request = requests.post(callback, data=json.dumps(data))
+    response_request = requests.post(callback, json=data)
     print(json.dumps(data))
     return json.dumps(data)
 

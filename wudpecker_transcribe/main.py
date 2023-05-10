@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 import json
 
-from wudpecker_transcribe.celery_config import celery_app, create_transcript, get_transcript
+from wudpecker_transcribe.celery_config import celery_app, create_transcript, get_transcript, backup_transcribe
 
 load_dotenv()
 
@@ -34,5 +34,14 @@ async def done(request: Request):
     request_data = json.loads(request_body)
     url = request_data.get('self')
     task = get_transcript.delay(url)
+    return {"task_id": task.id}
+    
+@app.post("/backup")
+async def backup(request: Request):
+    request_body = await request.body()
+    request_data = json.loads(request_body)
+    call_uuid = request_data.get('call_uuid')
+    url = request_data.get('url')
+    task = create_transcript.delay(call_uuid, url)
     return {"task_id": task.id}
     

@@ -62,6 +62,22 @@ def create_transcript(call_uuid, url):
     return azure_request.text
 
 @celery_app.task
+def backup_transcribe(call_uuid, url):
+    callback = os.getenv("DONE_CALLBACK_URL")
+
+    transcript = transcribe_deepgram(url)
+    formatted = parse_deepgram(transcript)
+    
+    json_file_name = call_uuid + '_final_.json'
+    res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
+    s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
+    s3object.put(Body=(bytes(json.dumps(formatted).encode('UTF-8'))))
+    data = {"uuid": call_uuid, "status":"Deepgram"}
+    response_request = requests.post(callback, data=data)
+    return json.dumps(data)
+
+
+@celery_app.task
 def get_transcript(url):
     callback = os.getenv("DONE_CALLBACK_URL")
     failed_callback = os.getenv("FAILED_CALLBACK_URL")
@@ -229,3 +245,60 @@ def ParseAzure(data):
 
         transcript["results"]["speaker_labels"]["segments"].append(phrase_obj)
     return transcript
+
+def transcribe_deepgram(s3url):
+
+    deepgram_key = "Token "+os.getenv("DEEPGRAM_TOKEN")
+    url = "https://api.deepgram.com/v1/listen?diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced"
+    deepgram_request_data = json.dumps(
+        {'url': s3url})
+    deepgram_request = requests.post(url, headers={'Content-Type': 'application/json', 'Authorization': deepgram_key}, data=deepgram_request_data)
+    
+    return json.loads(deepgram_request.text)
+
+
+def parse_deepgram(data):
+    raw = data
+    new = {"results": { "transcripts": [{"transcript":raw["results"]["channels"][0]["alternatives"][0]["transcript"]}]}}
+    speakers = []
+    prev_speaker = -1
+    tmp_items = []
+    segments = []
+    for word in raw["results"]["channels"][0]["alternatives"][0]["words"]:
+        speaker = word["speaker"]
+        if speaker not in speakers:
+            speakers.append(speaker)
+        if prev_speaker != speaker:
+            if tmp_items:
+                tmp = {
+                    "start_time": tmp_items[0]['start_time'],
+                    "end_time": tmp_items[-1]['end_time'],
+                    "speaker_label": "spk_"+str(prev_speaker),
+                    "items": tmp_items
+                }
+                segments.append(tmp)
+            prev_speaker = speaker
+            tmp_items = []
+        
+        start = f"{word['start']:.2f}"
+        end = f"{word['end']:.2f}"
+        w = word["punctuated_word"]
+        tmp_items.append({
+            "start_time": start,
+            "end_time": end,
+            "speaker_label": "spk_"+str(speaker),
+            "content": w,
+        })
+    else:
+        tmp = {
+            "start_time": tmp_items[0]['start_time'],
+            "end_time": tmp_items[-1]['end_time'],
+            "speaker_label": "spk_"+str(speaker),
+            "items": tmp_items
+        }
+        segments.append(tmp)
+    new['results']['speaker_labels'] = {
+        "speakers": len(speakers),
+        "segments": segments,
+    }
+    return new

@@ -93,7 +93,7 @@ def get_transcript(url):
             s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
             s3object.put(Body=(bytes(json.dumps(parsed).encode('UTF-8'))))
     data = {"uuid": req_obj['displayName'], "status":status}
-    if status == "complete":
+    if status == "Complete":
         response_request = requests.post(callback, json=data)
     print(json.dumps(data))
     return json.dumps(data)

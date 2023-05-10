@@ -42,6 +42,6 @@ async def backup(request: Request):
     request_data = json.loads(request_body)
     call_uuid = request_data.get('call_uuid')
     url = request_data.get('url')
-    task = create_transcript.delay(call_uuid, url)
+    task = backup_transcribe.delay(call_uuid, url)
     return {"task_id": task.id}
     

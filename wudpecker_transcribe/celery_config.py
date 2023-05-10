@@ -84,7 +84,7 @@ def get_transcript(url):
             try:
                 parsed = make_speaker_matcher(combine_multiple_segments(ParseAzure(azure_transcript)))
             except:
-                response_request = requests.post(failed_callback, json={"uuid": req_obj['displayName'], "status":"failed"})
+                response_request = requests.post(failed_callback, data={"uuid": req_obj['displayName'], "status":"failed"})
                 print(json.dumps(data))
                 return json.dumps(data)
 
@@ -94,7 +94,7 @@ def get_transcript(url):
             s3object.put(Body=(bytes(json.dumps(parsed).encode('UTF-8'))))
     data = {"uuid": req_obj['displayName'], "status":status}
     if status == "Complete":
-        response_request = requests.post(callback, json=data)
+        response_request = requests.post(callback, data=data)
     print(json.dumps(data))
     return json.dumps(data)
 

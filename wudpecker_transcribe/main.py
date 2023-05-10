@@ -26,7 +26,7 @@ async def create(request: Request):
     return {"task_id": task.id}
     
 @app.post("/done")
-async def create(request: Request):
+async def done(request: Request):
     validation_token = request.query_params.get('validationToken')
     if validation_token:
         return PlainTextResponse(validation_token)

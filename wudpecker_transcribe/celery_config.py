@@ -64,6 +64,7 @@ def create_transcript(call_uuid, url):
 @celery_app.task
 def get_transcript(url):
     callback = os.getenv("DONE_CALLBACK_URL")
+    failed_callback = os.getenv("FAILED_CALLBACK_URL")
     headers = {"Ocp-Apim-Subscription-Key": os.getenv('AZURE_KEY')}
 
     get_request = requests.get(url, headers=headers)
@@ -80,15 +81,20 @@ def get_transcript(url):
             azure_transcript = json.loads(json_download.text)
 
             # parse Transcript
-            parsed = make_speaker_matcher(combine_multiple_segments(ParseAzure(azure_transcript)))
+            try:
+                parsed = make_speaker_matcher(combine_multiple_segments(ParseAzure(azure_transcript)))
+            except:
+                response_request = requests.post(failed_callback, json={"uuid": req_obj['displayName'], "status":"failed"})
+                print(json.dumps(data))
+                return json.dumps(data)
 
             json_file_name = req_obj['displayName'] + '_final_.json'
             res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
             s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
             s3object.put(Body=(bytes(json.dumps(parsed).encode('UTF-8'))))
-
     data = {"uuid": req_obj['displayName'], "status":status}
-    response_request = requests.post(callback, json=data)
+    if status == "complete":
+        response_request = requests.post(callback, json=data)
     print(json.dumps(data))
     return json.dumps(data)
 

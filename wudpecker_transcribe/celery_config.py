@@ -85,8 +85,8 @@ def get_transcript(url):
                 parsed = make_speaker_matcher(combine_multiple_segments(ParseAzure(azure_transcript)))
             except:
                 response_request = requests.post(failed_callback, data={"uuid": req_obj['displayName'], "status":"failed"})
-                print(response_request.text)
-                return response_request.text
+                print("Failed")
+                return "Failed"
 
             json_file_name = req_obj['displayName'] + '_final_.json'
             res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')

@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 import json
 
-from wudpecker_transcribe.celery_config import celery_app, create_transcript, get_transcript, backup_transcribe
+from wudpecker_transcribe.celery_config import celery_app, create_transcript, get_transcript, deepgram_transcribe
 
 load_dotenv()
 
@@ -36,12 +36,12 @@ async def done(request: Request):
     task = get_transcript.delay(url)
     return {"task_id": task.id}
     
-@app.post("/backup")
-async def backup(request: Request):
+@app.post("/deepgram/start")
+async def deepgram_transcribe(request: Request):
     request_body = await request.body()
     request_data = json.loads(request_body)
     call_uuid = request_data.get('call_uuid')
     url = request_data.get('url')
-    task = backup_transcribe.delay(call_uuid, url)
+    task = deepgram_transcribe.delay(call_uuid, url)
     return {"task_id": task.id}
     

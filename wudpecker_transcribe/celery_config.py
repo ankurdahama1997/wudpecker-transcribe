@@ -62,7 +62,7 @@ def create_transcript(call_uuid, url):
     return azure_request.text
 
 @celery_app.task
-def backup_transcribe(call_uuid, url):
+def deepgram_transcribe(call_uuid, url):
     callback = os.getenv("DONE_CALLBACK_URL")
 
     transcript = transcribe_deepgram(url)
@@ -249,7 +249,7 @@ def ParseAzure(data):
 def transcribe_deepgram(s3url):
 
     deepgram_key = "Token "+os.getenv("DEEPGRAM_TOKEN")
-    url = "https://api.deepgram.com/v1/listen?diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced"
+    url = "https://api.deepgram.com/v1/listen?detect_language=true&diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced"
     deepgram_request_data = json.dumps(
         {'url': s3url})
     deepgram_request = requests.post(url, headers={'Content-Type': 'application/json', 'Authorization': deepgram_key}, data=deepgram_request_data)

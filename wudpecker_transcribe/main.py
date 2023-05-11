@@ -37,7 +37,7 @@ async def done(request: Request):
     return {"task_id": task.id}
     
 @app.post("/deepgram/start")
-async def deepgram_transcribe(request: Request):
+async def deepgram_start(request: Request):
     request_body = await request.body()
     request_data = json.loads(request_body)
     call_uuid = request_data.get('call_uuid')

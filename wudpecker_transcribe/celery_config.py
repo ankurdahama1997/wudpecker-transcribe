@@ -19,6 +19,29 @@ celery_app.conf.task_routes = {
     "wudpecker-transcribe.tasks.*": {"queue": "wudpecker-transcribe_queue"},
 }
 
+
+def transcribe_in_language(url, call_uuid, language="fi-FI"):
+    azure_req_body = json.dumps(
+        {'contentUrls': [url],
+        'properties':
+            {'diarizationEnabled': True,
+            "diarization": {
+                "speakers": {
+                    "minCount": 1,
+                    "maxCount": 6
+                }
+            },
+            'wordLevelTimestampsEnabled': True,
+            'punctuationMode': 'DictatedAndAutomatic',
+            'profanityFilterMode': 'None'},
+        'locale': language,
+        'displayName': call_uuid})
+    azure_key = os.getenv('AZURE_KEY')
+    azure_request = requests.post('https://northeurope.api.cognitive.microsoft.com/speechtotext/v3.1/transcriptions', headers={
+                                'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': azure_key}, data=azure_req_body)
+    return azure_request.text
+
+
 @celery_app.task
 def create_transcript(call_uuid, url):
     callback = os.getenv("CREATED_CALLBACK_URL")
@@ -72,6 +95,15 @@ def deepgram_transcribe(call_uuid, url):
     res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
     s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
     s3object.put(Body=(bytes(json.dumps(formatted).encode('UTF-8'))))
+    # Check if the meeting is coherent using coherency api
+    try:
+        coherent_res = requests.get(f"{os.getenv('COHERENCY_URL')}/?azure={call_uuid}")
+        if not coherent_res.json():
+            transcribe_in_language(url, call_uuid, language="fi-FI")
+            return json.dumps({"uuid": call_uuid, "status":"Incoherent"})
+    except Exception as e:
+        print(f"Coherency check failed: {str(e)}")
+
     data = {"uuid": call_uuid, "status":"Deepgram"}
     response_request = requests.post(callback, data=data)
     return json.dumps(data)

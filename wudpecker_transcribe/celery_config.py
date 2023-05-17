@@ -20,7 +20,7 @@ celery_app.conf.task_routes = {
 }
 
 
-def transcribe_in_language(url, call_uuid, language="fi-FI"):
+def transcribe_azure_detect_language(url, call_uuid):
     azure_req_body = json.dumps(
         {'contentUrls': [url],
         'properties':
@@ -33,8 +33,22 @@ def transcribe_in_language(url, call_uuid, language="fi-FI"):
             },
             'wordLevelTimestampsEnabled': True,
             'punctuationMode': 'DictatedAndAutomatic',
-            'profanityFilterMode': 'None'},
-        'locale': language,
+            'profanityFilterMode': 'None',
+            "languageIdentification": {
+            "candidateLocales": [
+                "en-US",
+                "fi-FI",
+                "da-DK",
+                "fr-FR", 
+                "de-DE",
+                "pt-BR",
+                "ru-RU",
+                "es-ES",
+                "sv-SE",
+                "uk-UA"]
+                },
+            },
+        'locale': "en-US",
         'displayName': call_uuid})
     azure_key = os.getenv('AZURE_KEY')
     azure_request = requests.post('https://northeurope.api.cognitive.microsoft.com/speechtotext/v3.1/transcriptions', headers={
@@ -99,7 +113,7 @@ def deepgram_transcribe(call_uuid, url):
     try:
         coherent_res = requests.get(f"{os.getenv('COHERENCY_URL')}/?azure={call_uuid}")
         if not coherent_res.json():
-            transcribe_in_language(url, call_uuid, language="fi-FI")
+            transcribe_azure_detect_language(url, call_uuid)
             return json.dumps({"uuid": call_uuid, "status":"Incoherent"})
     except Exception as e:
         print(f"Coherency check failed: {str(e)}")

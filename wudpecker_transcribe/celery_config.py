@@ -293,8 +293,9 @@ def ParseAzure(data):
     return transcript
 
 def transcribe_deepgram(s3url):
-
-    deepgram_key = "Token "+os.getenv("DEEPGRAM_TOKEN")
+    res = requests.get(os.getenv("DEEPGRAM_TOKEN"))
+    token = json.loads(res.text)
+    deepgram_key = "Token "+token
     url = "https://api.deepgram.com/v1/listen?detect_language=true&diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced"
     deepgram_request_data = json.dumps(
         {'url': s3url})

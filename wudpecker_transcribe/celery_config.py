@@ -105,10 +105,16 @@ def deepgram_transcribe(call_uuid, url):
     transcript = transcribe_deepgram(url)
     formatted = parse_deepgram(transcript)
     
-    json_file_name = call_uuid + '_final_.json'
-    res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
-    s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
-    s3object.put(Body=(bytes(json.dumps(formatted).encode('UTF-8'))))
+    # when there are multiple owners in the same call, update the transcript for each
+    response = requests.post(os.getenv("MULTIPLE_CALL_URL"), data={"uuid":call_uuid})
+    uuid_list = response.json()
+
+    for call in uuid_list:
+        json_file_name = call + '_final_.json'
+        res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
+        s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
+        s3object.put(Body=(bytes(json.dumps(formatted).encode('UTF-8'))))
+
     # Check if the meeting is coherent using coherency api
     try:
         coherent_res = requests.get(f"{os.getenv('COHERENCY_URL')}/?azure={call_uuid}")
@@ -150,10 +156,15 @@ def get_transcript(url):
                 print("Failed")
                 return "Failed"
 
-            json_file_name = req_obj['displayName'] + '_final_.json'
-            res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
-            s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
-            s3object.put(Body=(bytes(json.dumps(parsed).encode('UTF-8'))))
+            # when there are multiple owners in the same call, update the transcript for each
+            response = requests.post(os.getenv("MULTIPLE_CALL_URL"), data={"uuid":req_obj['displayName']})
+            uuid_list = response.json()
+
+            for call in uuid_list:
+                json_file_name = call + '_final_.json'
+                res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
+                s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
+                s3object.put(Body=(bytes(json.dumps(parsed).encode('UTF-8'))))
     data = {"uuid": req_obj['displayName'], "status":status}
     if status == "Complete":
         response_request = requests.post(callback, data=data)

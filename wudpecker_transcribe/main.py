@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 import json
 
-from wudpecker_transcribe.celery_config import celery_app, create_transcript, get_transcript, deepgram_transcribe
+from wudpecker_transcribe.celery_config import celery_app, create_transcript, get_transcript, deepgram_transcribe, create_transcript_manual
 
 load_dotenv()
 
@@ -20,10 +20,16 @@ def root():
 async def create(request: Request):
     request_body = await request.body()
     request_data = json.loads(request_body)
-    call_uuid = request_data.get('call_uuid')
+    uuid = request_data.get('uuid')
     url = request_data.get('url')
-    task = create_transcript.delay(call_uuid, url)
+    lang = request_data.get('lang', 'NaN')
+    if lang == 'Nan':
+        task = create_transcript.delay(uuid, url)
+    else:
+        task = create_transcript_manual.delay(uuid, url, lang)
     return {"task_id": task.id}
+
+
     
 @app.post("/done")
 async def done(request: Request):
@@ -40,8 +46,8 @@ async def done(request: Request):
 async def deepgram_start(request: Request):
     request_body = await request.body()
     request_data = json.loads(request_body)
-    call_uuid = request_data.get('call_uuid')
+    uuid = request_data.get('uuid')
     url = request_data.get('url')
-    task = deepgram_transcribe.delay(call_uuid, url)
+    task = deepgram_transcribe.delay(uuid, url)
     return {"task_id": task.id}
     

@@ -20,7 +20,7 @@ celery_app.conf.task_routes = {
 }
 
 
-def transcribe_azure_detect_language(url, call_uuid):
+def transcribe_azure_detect_language(url, uuid):
     azure_req_body = json.dumps(
         {'contentUrls': [url],
         'properties':
@@ -49,7 +49,32 @@ def transcribe_azure_detect_language(url, call_uuid):
                 },
             },
         'locale': "en-US",
-        'displayName': call_uuid})
+        'displayName': uuid})
+    azure_key = os.getenv('AZURE_KEY')
+    azure_request = requests.post('https://northeurope.api.cognitive.microsoft.com/speechtotext/v3.1/transcriptions', headers={
+                                'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': azure_key}, data=azure_req_body)
+    return azure_request.text
+
+
+
+
+def transcribe_azure_manual(url, uuid, lang):
+    azure_req_body = json.dumps(
+        {'contentUrls': [url],
+        'properties':
+            {'diarizationEnabled': True,
+            "diarization": {
+                "speakers": {
+                    "minCount": 1,
+                    "maxCount": 6
+                }
+            },
+            'wordLevelTimestampsEnabled': True,
+            'punctuationMode': 'DictatedAndAutomatic',
+            'profanityFilterMode': 'None',
+            },
+        'locale': lang,
+        'displayName': uuid})
     azure_key = os.getenv('AZURE_KEY')
     azure_request = requests.post('https://northeurope.api.cognitive.microsoft.com/speechtotext/v3.1/transcriptions', headers={
                                 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': azure_key}, data=azure_req_body)
@@ -57,74 +82,43 @@ def transcribe_azure_detect_language(url, call_uuid):
 
 
 @celery_app.task
-def create_transcript(call_uuid, url):
+def create_transcript(uuid, url):
     callback = os.getenv("CREATED_CALLBACK_URL")
+    transcript = transcribe_azure_detect_language(url, uuid)
+    response_request = requests.post(callback, data=transcript)
+    return transcript
 
-    azure_req_body = json.dumps(
-        {'contentUrls': [url],
-        'properties':
-            {'diarizationEnabled': True,
-            "diarization": {
-                "speakers": {
-                    "minCount": 1,
-                    "maxCount": 6
-                }
-            },
-            'wordLevelTimestampsEnabled': True,
-            'punctuationMode': 'DictatedAndAutomatic',
-            'profanityFilterMode': 'None',
-            "languageIdentification": {
-            "candidateLocales": [
-                "en-US",
-                "fi-FI",
-                "da-DK",
-                "fr-FR", 
-                "de-DE",
-                "pt-BR",
-                "ru-RU",
-                "es-ES",
-                "sv-SE",
-                "uk-UA"]
-                },
-            },
-        'locale': "en-US",
-        'displayName': call_uuid})
-    azure_key = os.getenv('AZURE_KEY')
-    azure_request = requests.post('https://northeurope.api.cognitive.microsoft.com/speechtotext/v3.1/transcriptions', headers={
-                                'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': azure_key}, data=azure_req_body)
-    
-        
-    response_request = requests.post(callback, data=azure_request.text)
-    print(azure_request)
-    return azure_request.text
 
 @celery_app.task
-def deepgram_transcribe(call_uuid, url):
+def create_transcript_manual(uuid, url, lang):
+    callback = os.getenv("CREATED_CALLBACK_URL")
+    transcript = transcribe_azure_manual(url, uuid, lang)
+    response_request = requests.post(callback, data=transcript)
+    return transcript
+
+
+@celery_app.task
+def deepgram_transcribe(uuid, url):
     callback = os.getenv("DONE_CALLBACK_URL")
 
     transcript = transcribe_deepgram(url)
     formatted = parse_deepgram(transcript)
-    
-    # when there are multiple owners in the same call, update the transcript for each
-    response = requests.post(os.getenv("MULTIPLE_CALL_URL"), data={"uuid":call_uuid})
-    uuid_list = response.json()
 
-    for call in uuid_list:
-        json_file_name = call + '_final_.json'
-        res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
-        s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
-        s3object.put(Body=(bytes(json.dumps(formatted).encode('UTF-8'))))
+    json_file_name = uuid + '_final_.json'
+    res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
+    s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
+    s3object.put(Body=(bytes(json.dumps(formatted).encode('UTF-8'))))
 
     # Check if the meeting is coherent using coherency api
     try:
-        coherent_res = requests.get(f"{os.getenv('COHERENCY_URL')}/?azure={call_uuid}")
+        coherent_res = requests.get(f"{os.getenv('COHERENCY_URL')}/?azure={uuid}")
         if not coherent_res.json():
-            transcribe_azure_detect_language(url, call_uuid)
-            return json.dumps({"uuid": call_uuid, "status":"Incoherent"})
+            transcribe_azure_detect_language(url, uuid)
+            return json.dumps({"uuid": uuid, "status":"Incoherent"})
     except Exception as e:
         print(f"Coherency check failed: {str(e)}")
 
-    data = {"uuid": call_uuid, "status":"Deepgram"}
+    data = {"uuid": uuid, "status":"Deepgram"}
     response_request = requests.post(callback, data=data)
     return json.dumps(data)
 
@@ -157,14 +151,11 @@ def get_transcript(url):
                 return "Failed"
 
             # when there are multiple owners in the same call, update the transcript for each
-            response = requests.post(os.getenv("MULTIPLE_CALL_URL"), data={"uuid":req_obj['displayName']})
-            uuid_list = response.json()
-
-            for call in uuid_list:
-                json_file_name = call + '_final_.json'
-                res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
-                s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
-                s3object.put(Body=(bytes(json.dumps(parsed).encode('UTF-8'))))
+    
+            json_file_name = req_obj['displayName'] + '_final_.json'
+            res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
+            s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
+            s3object.put(Body=(bytes(json.dumps(parsed).encode('UTF-8'))))
     data = {"uuid": req_obj['displayName'], "status":status}
     if status == "Complete":
         response_request = requests.post(callback, data=data)

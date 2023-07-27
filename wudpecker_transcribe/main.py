@@ -48,6 +48,8 @@ async def deepgram_start(request: Request):
     request_data = json.loads(request_body)
     uuid = request_data.get('uuid')
     url = request_data.get('url')
-    task = deepgram_transcribe.delay(uuid, url)
+    lang_string = request_data.get('lang','')
+    langs = [] if lang_string == '' else list(set(lang_string.split(',')))
+    task = deepgram_transcribe.delay(uuid, url, langs)
     return {"task_id": task.id}
     

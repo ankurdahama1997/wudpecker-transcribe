@@ -19,8 +19,7 @@ celery_app.conf.task_routes = {
     "wudpecker-transcribe.tasks.*": {"queue": "wudpecker-transcribe_queue"},
 }
 
-
-def transcribe_azure_detect_language(url, uuid):
+def transcribe_azure_detect_language(url, uuid, langs):
     azure_req_body = json.dumps(
         {'contentUrls': [url],
         'properties':
@@ -35,17 +34,7 @@ def transcribe_azure_detect_language(url, uuid):
             'punctuationMode': 'DictatedAndAutomatic',
             'profanityFilterMode': 'None',
             "languageIdentification": {
-            "candidateLocales": [
-                "en-US",
-                "fi-FI",
-                "da-DK",
-                "fr-FR", 
-                "de-DE",
-                "pt-BR",
-                "ru-RU",
-                "es-ES",
-                "sv-SE",
-                "uk-UA"]
+            "candidateLocales": langs
                 },
             },
         'locale': "en-US",
@@ -96,12 +85,36 @@ def create_transcript_manual(uuid, url, lang):
     response_request = requests.post(callback, data=transcript)
     return transcript
 
+def lang_in_langs(lang, langs):
+    return (lang in langs or lang.split('-')[0] in langs)
 
 @celery_app.task
-def deepgram_transcribe(uuid, url):
-    callback = os.getenv("DONE_CALLBACK_URL")
+def deepgram_transcribe(uuid, url, langs=[]):
+    DEEPGRAM_LANGS = ["zh", "zh-CN", "zh-TW", "da", "nl", "en", "en-AU", "en-GB", "en-IN", "en-NZ", "en-US", "fr", "fr-CA", "de", "hi", "hi-Latn", "id", "it", "ja", "ko", "no", "pl", "pt", "pt-BR", "pt-PT", "ru", "es", "es-419", "sv", "ta", "tr", "uk"]
 
-    transcript = transcribe_deepgram(url)
+    callback = os.getenv("DONE_CALLBACK_URL")
+    if (len(langs) == 1 and lang_in_langs(langs[0],DEEPGRAM_LANGS)):
+        if langs[0] in DEEPGRAM_LANGS:
+            lang_code = langs[0]
+        else:
+            lang_code = langs[0].split('-')[0]
+
+        transcript = transcribe_deepgram(url, lang_code)
+        status = 'DEEPGRAM_SINGLE'
+    elif len(langs) == 1 and not lang_in_langs(langs[0],DEEPGRAM_LANGS):
+        transcribe_azure_manual(url, uuid, langs[0])
+        status = 'AZURE_SINGLE'
+        data = {"uuid": uuid, "status":status}
+        return json.dumps(data)
+    elif (len(langs) > 1 and all(lang_in_langs(lang, DEEPGRAM_LANGS) for lang in langs)) or len(langs)==0:
+        transcript = transcribe_deepgram(url)
+        status = 'DEEPGRAM_MULTI'
+    else:
+        transcribe_azure_detect_language(url, uuid, langs)
+        status = 'AZURE_MULTI'
+        data = {"uuid": uuid, "status":status}
+        return json.dumps(data)
+    
     formatted = parse_deepgram(transcript)
 
     json_file_name = uuid + '_final_.json'
@@ -109,16 +122,16 @@ def deepgram_transcribe(uuid, url):
     s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
     s3object.put(Body=(bytes(json.dumps(formatted).encode('UTF-8'))))
 
-    # Check if the meeting is coherent using coherency api
-    try:
-        coherent_res = requests.get(f"{os.getenv('COHERENCY_URL')}/?azure={uuid}")
-        if not coherent_res.json():
-            transcribe_azure_detect_language(url, uuid)
-            return json.dumps({"uuid": uuid, "status":"Incoherent"})
-    except Exception as e:
-        print(f"Coherency check failed: {str(e)}")
+    # # Check if the meeting is coherent using coherency api
+    # try:
+    #     coherent_res = requests.get(f"{os.getenv('COHERENCY_URL')}/?azure={uuid}")
+    #     if not coherent_res.json():
+    #         transcribe_azure_detect_language(url, uuid)
+    #         return json.dumps({"uuid": uuid, "status":"Incoherent"})
+    # except Exception as e:
+    #     print(f"Coherency check failed: {str(e)}")
 
-    data = {"uuid": uuid, "status":"Deepgram"}
+    data = {"uuid": uuid, "status":status}
     response_request = requests.post(callback, data=data)
     return json.dumps(data)
 
@@ -294,11 +307,14 @@ def ParseAzure(data):
         transcript["results"]["speaker_labels"]["segments"].append(phrase_obj)
     return transcript
 
-def transcribe_deepgram(s3url):
+def transcribe_deepgram(s3url, lang=None):
     res = requests.get(os.getenv("DEEPGRAM_TOKEN"))
     token = json.loads(res.text)
     deepgram_key = "Token "+token
-    url = "https://api.deepgram.com/v1/listen?detect_language=true&diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced"
+    if lang:
+        url = f"https://api.deepgram.com/v1/listen?language={lang}&diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced"
+    else:
+        url = "https://api.deepgram.com/v1/listen?detect_language=true&diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced"
     deepgram_request_data = json.dumps(
         {'url': s3url})
     deepgram_request = requests.post(url, headers={'Content-Type': 'application/json', 'Authorization': deepgram_key}, data=deepgram_request_data)

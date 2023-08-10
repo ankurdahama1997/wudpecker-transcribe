@@ -34,7 +34,7 @@ def transcribe_azure_detect_language(url, uuid, langs):
             'punctuationMode': 'DictatedAndAutomatic',
             'profanityFilterMode': 'None',
             "languageIdentification": {
-                "candidateLocales": json.dumps(langs),
+                "candidateLocales": langs,
             },
         },
         'locale': "en-US",
@@ -110,7 +110,8 @@ def deepgram_transcribe(uuid, url, langs=[]):
         transcript = transcribe_deepgram(url)
         status = 'DEEPGRAM_MULTI'
     else:
-        transcribe_azure_detect_language(url, uuid, langs)
+        res = transcribe_azure_detect_language(url, uuid, langs)
+        print(res,flush=True)
         status = 'AZURE_MULTI'
         data = {"uuid": uuid, "status":status}
         return json.dumps(data)

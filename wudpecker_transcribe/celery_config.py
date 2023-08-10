@@ -34,9 +34,9 @@ def transcribe_azure_detect_language(url, uuid, langs):
             'punctuationMode': 'DictatedAndAutomatic',
             'profanityFilterMode': 'None',
             "languageIdentification": {
-            "candidateLocales": langs
-                },
+                "candidateLocales": json.dumps(langs),
             },
+        },
         'locale': "en-US",
         'displayName': uuid})
     azure_key = os.getenv('AZURE_KEY')

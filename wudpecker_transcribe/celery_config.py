@@ -90,7 +90,7 @@ def lang_in_langs(lang, langs):
 
 @celery_app.task
 def deepgram_transcribe(uuid, url, langs=[]):
-    DEEPGRAM_LANGS = ['da', 'nl', 'en', 'en-US', 'nl', 'fr', 'de', 'hi', 'it', 'ja', 'ko', 'no', 'pl', 'pt', 'pt-BR', 'pt-PT', 'es', 'es-419', 'ta']
+    DEEPGRAM_LANGS = ['da', 'nl', 'en', 'en-US', 'nl', 'fr', 'de', 'hi', 'it', 'ja', 'ko', 'no', 'pl', 'pt', 'pt-BR', 'pt-PT', 'es', 'es-419', 'ta', 'sv']
 
     callback = os.getenv("DONE_CALLBACK_URL")
     if (len(langs) == 1 and lang_in_langs(langs[0],DEEPGRAM_LANGS)):
@@ -115,8 +115,12 @@ def deepgram_transcribe(uuid, url, langs=[]):
         status = 'AZURE_MULTI'
         data = {"uuid": uuid, "status":status}
         return json.dumps(data)
-    
-    formatted = parse_deepgram(transcript)
+
+    try:
+        formatted = parse_deepgram(transcript)
+    except Exception as e:
+        print(transcript, flush=True)
+        raise ValueError(f'Deepgram failed: {transcript}')
 
     json_file_name = uuid + '_final_.json'
     res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
@@ -323,7 +327,7 @@ def transcribe_deepgram(s3url, lang=None):
     return json.loads(deepgram_request.text)
 
 
-def parse_deepgram(data):
+def (data):
     raw = data
     new = {"results": { "transcripts": [{"transcript":raw["results"]["channels"][0]["alternatives"][0]["transcript"]}]}}
     speakers = []

@@ -327,7 +327,7 @@ def transcribe_deepgram(s3url, lang=None):
     return json.loads(deepgram_request.text)
 
 
-def (data):
+def parse_deepgram(data):
     raw = data
     new = {"results": { "transcripts": [{"transcript":raw["results"]["channels"][0]["alternatives"][0]["transcript"]}]}}
     speakers = []

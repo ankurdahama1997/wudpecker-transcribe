@@ -90,7 +90,7 @@ def lang_in_langs(lang, langs):
 
 @celery_app.task
 def deepgram_transcribe(uuid, url, langs=[]):
-    DEEPGRAM_LANGS = ['da', 'nl', 'en', 'en-US', 'nl', 'fr', 'de', 'hi', 'it', 'ja', 'ko', 'no', 'pl', 'pt', 'pt-BR', 'pt-PT', 'es', 'es-419', 'sv', 'ta']
+    DEEPGRAM_LANGS = ['da', 'nl', 'en', 'en-US', 'nl', 'fr', 'de', 'hi', 'it', 'ja', 'ko', 'no', 'pl', 'pt', 'pt-BR', 'pt-PT', 'es', 'es-419', 'ta']
 
     callback = os.getenv("DONE_CALLBACK_URL")
     if (len(langs) == 1 and lang_in_langs(langs[0],DEEPGRAM_LANGS)):

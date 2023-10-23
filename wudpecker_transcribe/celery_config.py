@@ -117,9 +117,21 @@ def deepgram_transcribe(uuid, url, langs=[]):
         return json.dumps(data)
 
     try:
-        formatted = parse_deepgram(transcript)
+        # Extract the actual transcript text and words list
+        actual_transcript = transcript['results']['channels'][0]['alternatives'][0]['transcript']
+        words_list = transcript['results']['channels'][0]['alternatives'][0]['words']
+
+        # Check if transcript is empty or just whitespace, and if words list is empty
+        if not actual_transcript.strip() or not words_list:
+            data = {"uuid": uuid, "status": "EMPTY"}
+            requests.post(callback, data=data)
+            return json.dumps(data)
+        else:
+            formatted = parse_deepgram(transcript)
     except Exception as e:
         print(transcript, flush=True)
+        failed_callback = os.getenv("FAILED_CALLBACK_URL")
+        response_request = requests.post(failed_callback, data={"uuid": uuid, "status": "failed"})
         raise ValueError(f'Deepgram failed: {transcript}')
 
     json_file_name = uuid + '_final_.json'

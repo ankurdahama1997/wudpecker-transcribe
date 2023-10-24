@@ -73,7 +73,18 @@ def transcribe_azure_manual(url, uuid, lang):
 @celery_app.task
 def create_transcript(uuid, url):
     callback = os.getenv("CREATED_CALLBACK_URL")
-    transcript = transcribe_azure_detect_language(url, uuid)
+    langs = [
+                "en-US",
+                "da-DK",
+                "fr-FR",
+                "de-DE",
+                "pt-BR",
+                "ru-RU",
+                "es-ES",
+                "sv-SE",
+            ]
+
+    transcript = transcribe_azure_detect_language(url, uuid, langs)
     response_request = requests.post(callback, data=transcript)
     return transcript
 

@@ -37,7 +37,7 @@ def transcribe_azure_detect_language(url, uuid, langs):
                 "candidateLocales": langs,
             },
         },
-        'locale': "en-US",
+        'locale': langs[0],
         'displayName': uuid})
     azure_key = os.getenv('AZURE_KEY')
     azure_request = requests.post('https://northeurope.api.cognitive.microsoft.com/speechtotext/v3.1/transcriptions', headers={

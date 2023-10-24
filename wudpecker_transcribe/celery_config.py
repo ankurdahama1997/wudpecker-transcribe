@@ -113,7 +113,10 @@ def deepgram_transcribe(uuid, url, langs=[]):
         transcript = transcribe_deepgram(url, lang_code)
         status = 'DEEPGRAM_SINGLE'
     elif len(langs) == 1 and not lang_in_langs(langs[0],DEEPGRAM_LANGS):
-        transcribe_azure_manual(url, uuid, langs[0])
+        res = transcribe_azure_manual(url, uuid, langs[0])
+        if "self" not in res:
+            raise ValueError(f"Azure failed: {res}")
+        print(res, flush=True)
         status = 'AZURE_SINGLE'
         data = {"uuid": uuid, "status":status}
         return json.dumps(data)
@@ -122,6 +125,8 @@ def deepgram_transcribe(uuid, url, langs=[]):
         status = 'DEEPGRAM_MULTI'
     else:
         res = transcribe_azure_detect_language(url, uuid, langs)
+        if "self" not in res:
+            raise ValueError(f"Azure failed: {res}")
         print(res,flush=True)
         status = 'AZURE_MULTI'
         data = {"uuid": uuid, "status":status}

@@ -23,7 +23,7 @@ async def create(request: Request):
     uuid = request_data.get('uuid')
     url = request_data.get('url')
     lang = request_data.get('lang', 'NaN')
-    if lang == 'Nan':
+    if lang == 'NaN':
         task = create_transcript.delay(uuid, url)
     else:
         task = create_transcript_manual.delay(uuid, url, lang)

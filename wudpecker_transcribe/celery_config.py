@@ -147,7 +147,7 @@ def deepgram_transcribe(uuid, url, langs=[]):
     except Exception as e:
         print(transcript, flush=True)
         failed_callback = os.getenv("FAILED_CALLBACK_URL")
-        response_request = requests.post(failed_callback, data={"uuid": uuid, "status": "failed"})
+        response_request = requests.post(failed_callback, data={"uuid": uuid, "status": "failed", "url": url})
         raise ValueError(f'Deepgram failed: {transcript}')
 
     json_file_name = uuid + '_final_.json'

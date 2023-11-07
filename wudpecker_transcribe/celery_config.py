@@ -345,9 +345,9 @@ def transcribe_deepgram(s3url, lang=None):
     token = json.loads(res.text)
     deepgram_key = "Token "+token
     if lang:
-        url = f"https://api.deepgram.com/v1/listen?language={lang}&diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced"
+        url = f"https://api.deepgram.com/v1/listen?language={lang}&diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced&keywords=Wudpecker:1"
     else:
-        url = "https://api.deepgram.com/v1/listen?detect_language=true&diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced"
+        url = "https://api.deepgram.com/v1/listen?detect_language=true&diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced&keywords=Wudpecker:1"
     deepgram_request_data = json.dumps(
         {'url': s3url})
     deepgram_request = requests.post(url, headers={'Content-Type': 'application/json', 'Authorization': deepgram_key}, data=deepgram_request_data)

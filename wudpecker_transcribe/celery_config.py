@@ -213,8 +213,9 @@ def get_transcript(url):
                 try:
                     parsed = make_speaker_matcher(combine_multiple_segments(ParseAzure(azure_transcript)))
                 except Exception as e:
-                    response_request = requests.post(failed_callback, data={"uuid": req_obj['displayName'], "status":"failed"})
-                    raise ValueError("Get transcript failed")
+                    data = {"uuid": req_obj['displayName'], "status": "EMPTY"}
+                    requests.post(callback, data=data)
+                    return json.dumps(data)
 
                 # when there are multiple owners in the same call, update the transcript for each
         

@@ -103,122 +103,133 @@ def create_transcript(uuid, url):
 
 @celery_app.task
 def create_transcript_manual(uuid, url, lang):
-    callback = os.getenv("CREATED_CALLBACK_URL")
-    transcript = transcribe_azure_manual(url, uuid, lang)
-    response_request = requests.post(callback, data=transcript)
-    return transcript
+    try:
+        callback = os.getenv("CREATED_CALLBACK_URL")
+        transcript = transcribe_azure_manual(url, uuid, lang)
+        response_request = requests.post(callback, data=transcript)
+        return transcript
+    except Exception as e:
+        fail_logger(f"create_transcript failed: {e}")
+        raise
 
 def lang_in_langs(lang, langs):
     return (lang in langs or lang.split('-')[0] in langs)
 
 @celery_app.task
 def deepgram_transcribe(uuid, url, langs=[]):
-    DEEPGRAM_LANGS = ['da', 'nl', 'en', 'en-US', 'nl', 'fr', 'de', 'hi', 'it', 'ja', 'ko', 'no', 'pl', 'pt', 'pt-BR', 'pt-PT', 'es', 'es-419', 'ta', 'sv']
-
-    callback = os.getenv("DONE_CALLBACK_URL")
-    if (len(langs) == 1 and lang_in_langs(langs[0],DEEPGRAM_LANGS)):
-        if langs[0] in DEEPGRAM_LANGS:
-            lang_code = langs[0]
-        else:
-            lang_code = langs[0].split('-')[0]
-
-        transcript = transcribe_deepgram(url, lang_code)
-        status = 'DEEPGRAM_SINGLE'
-    elif len(langs) == 1 and not lang_in_langs(langs[0],DEEPGRAM_LANGS):
-        res = transcribe_azure_manual(url, uuid, langs[0])
-        if "self" not in res:
-            raise ValueError(f"Azure failed: {res}")
-        print(res, flush=True)
-        status = 'AZURE_SINGLE'
-        data = {"uuid": uuid, "status":status}
-        return json.dumps(data)
-    elif (len(langs) > 1 and all(lang_in_langs(lang, DEEPGRAM_LANGS) for lang in langs)) or len(langs)==0:
-        transcript = transcribe_deepgram(url)
-        status = 'DEEPGRAM_MULTI'
-    else:
-        res = transcribe_azure_detect_language(url, uuid, langs)
-        if "self" not in res:
-            raise ValueError(f"Azure failed: {res}")
-        print(res,flush=True)
-        status = 'AZURE_MULTI'
-        data = {"uuid": uuid, "status":status}
-        return json.dumps(data)
-
     try:
-        # Extract the actual transcript text and words list
-        actual_transcript = transcript['results']['channels'][0]['alternatives'][0]['transcript']
-        words_list = transcript['results']['channels'][0]['alternatives'][0]['words']
+        DEEPGRAM_LANGS = ['da', 'nl', 'en', 'en-US', 'nl', 'fr', 'de', 'hi', 'it', 'ja', 'ko', 'no', 'pl', 'pt', 'pt-BR', 'pt-PT', 'es', 'es-419', 'ta', 'sv']
 
-        # Check if transcript is empty or just whitespace, and if words list is empty
-        if not actual_transcript.strip() or not words_list:
-            data = {"uuid": uuid, "status": "EMPTY"}
-            requests.post(callback, data=data)
+        callback = os.getenv("DONE_CALLBACK_URL")
+        if (len(langs) == 1 and lang_in_langs(langs[0],DEEPGRAM_LANGS)):
+            if langs[0] in DEEPGRAM_LANGS:
+                lang_code = langs[0]
+            else:
+                lang_code = langs[0].split('-')[0]
+
+            transcript = transcribe_deepgram(url, lang_code)
+            status = 'DEEPGRAM_SINGLE'
+        elif len(langs) == 1 and not lang_in_langs(langs[0],DEEPGRAM_LANGS):
+            res = transcribe_azure_manual(url, uuid, langs[0])
+            if "self" not in res:
+                raise ValueError(f"Azure failed: {res}")
+            print(res, flush=True)
+            status = 'AZURE_SINGLE'
+            data = {"uuid": uuid, "status":status}
             return json.dumps(data)
+        elif (len(langs) > 1 and all(lang_in_langs(lang, DEEPGRAM_LANGS) for lang in langs)) or len(langs)==0:
+            transcript = transcribe_deepgram(url)
+            status = 'DEEPGRAM_MULTI'
         else:
-            formatted = parse_deepgram(transcript)
+            res = transcribe_azure_detect_language(url, uuid, langs)
+            if "self" not in res:
+                raise ValueError(f"Azure failed: {res}")
+            print(res,flush=True)
+            status = 'AZURE_MULTI'
+            data = {"uuid": uuid, "status":status}
+            return json.dumps(data)
+
+        try:
+            # Extract the actual transcript text and words list
+            actual_transcript = transcript['results']['channels'][0]['alternatives'][0]['transcript']
+            words_list = transcript['results']['channels'][0]['alternatives'][0]['words']
+
+            # Check if transcript is empty or just whitespace, and if words list is empty
+            if not actual_transcript.strip() or not words_list:
+                data = {"uuid": uuid, "status": "EMPTY"}
+                requests.post(callback, data=data)
+                return json.dumps(data)
+            else:
+                formatted = parse_deepgram(transcript)
+        except Exception as e:
+            print(transcript, flush=True)
+            failed_callback = os.getenv("FAILED_CALLBACK_URL")
+            response_request = requests.post(failed_callback, data={"uuid": uuid, "status": "failed", "url": url})
+            raise ValueError(f'Deepgram failed: {transcript}')
+
+        json_file_name = uuid + '_final_.json'
+        res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
+        s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
+        s3object.put(Body=(bytes(json.dumps(formatted).encode('UTF-8'))))
+
+        # # Check if the meeting is coherent using coherency api
+        # try:
+        #     coherent_res = requests.get(f"{os.getenv('COHERENCY_URL')}/?azure={uuid}")
+        #     if not coherent_res.json():
+        #         transcribe_azure_detect_language(url, uuid)
+        #         return json.dumps({"uuid": uuid, "status":"Incoherent"})
+        # except Exception as e:
+        #     print(f"Coherency check failed: {str(e)}")
+
+        data = {"uuid": uuid, "status":status}
+        response_request = requests.post(callback, data=data)
+        return json.dumps(data)
     except Exception as e:
-        print(transcript, flush=True)
-        failed_callback = os.getenv("FAILED_CALLBACK_URL")
-        response_request = requests.post(failed_callback, data={"uuid": uuid, "status": "failed", "url": url})
-        raise ValueError(f'Deepgram failed: {transcript}')
-
-    json_file_name = uuid + '_final_.json'
-    res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
-    s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
-    s3object.put(Body=(bytes(json.dumps(formatted).encode('UTF-8'))))
-
-    # # Check if the meeting is coherent using coherency api
-    # try:
-    #     coherent_res = requests.get(f"{os.getenv('COHERENCY_URL')}/?azure={uuid}")
-    #     if not coherent_res.json():
-    #         transcribe_azure_detect_language(url, uuid)
-    #         return json.dumps({"uuid": uuid, "status":"Incoherent"})
-    # except Exception as e:
-    #     print(f"Coherency check failed: {str(e)}")
-
-    data = {"uuid": uuid, "status":status}
-    response_request = requests.post(callback, data=data)
-    return json.dumps(data)
+        fail_logger(f"create_transcript failed: {e}")
+        raise
 
 
 @celery_app.task
 def get_transcript(url):
-    callback = os.getenv("DONE_CALLBACK_URL")
-    failed_callback = os.getenv("FAILED_CALLBACK_URL")
-    headers = {"Ocp-Apim-Subscription-Key": os.getenv('AZURE_KEY')}
+    try:
+        callback = os.getenv("DONE_CALLBACK_URL")
+        failed_callback = os.getenv("FAILED_CALLBACK_URL")
+        headers = {"Ocp-Apim-Subscription-Key": os.getenv('AZURE_KEY')}
 
-    get_request = requests.get(url, headers=headers)
-    req_obj = json.loads(get_request.text)
-    files_url = req_obj["links"]["files"]
-    files_req = requests.get(files_url, headers=headers)
-    files_obj = json.loads(files_req.text)
-    status = "Running"
-    for file in files_obj["values"]:
-        if file.get('kind', 'NaN') == "Transcription":
-            status = "Complete"
-            json_url = file["links"]["contentUrl"]
-            json_download = requests.get(json_url, headers={'Content-Type': 'application/json'})
-            azure_transcript = json.loads(json_download.text)
+        get_request = requests.get(url, headers=headers)
+        req_obj = json.loads(get_request.text)
+        files_url = req_obj["links"]["files"]
+        files_req = requests.get(files_url, headers=headers)
+        files_obj = json.loads(files_req.text)
+        status = "Running"
+        for file in files_obj["values"]:
+            if file.get('kind', 'NaN') == "Transcription":
+                status = "Complete"
+                json_url = file["links"]["contentUrl"]
+                json_download = requests.get(json_url, headers={'Content-Type': 'application/json'})
+                azure_transcript = json.loads(json_download.text)
 
-            # parse Transcript
-            try:
-                parsed = make_speaker_matcher(combine_multiple_segments(ParseAzure(azure_transcript)))
-            except:
-                response_request = requests.post(failed_callback, data={"uuid": req_obj['displayName'], "status":"failed"})
-                print("Failed")
-                return "Failed"
+                # parse Transcript
+                try:
+                    parsed = make_speaker_matcher(combine_multiple_segments(ParseAzure(azure_transcript)))
+                except Exception as e:
+                    response_request = requests.post(failed_callback, data={"uuid": req_obj['displayName'], "status":"failed"})
+                    raise ValueError("Get transcript failed")
 
-            # when there are multiple owners in the same call, update the transcript for each
-    
-            json_file_name = req_obj['displayName'] + '_final_.json'
-            res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
-            s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
-            s3object.put(Body=(bytes(json.dumps(parsed).encode('UTF-8'))))
-    data = {"uuid": req_obj['displayName'], "status":status}
-    if status == "Complete":
-        response_request = requests.post(callback, data=data)
-    print(json.dumps(data))
-    return json.dumps(data)
+                # when there are multiple owners in the same call, update the transcript for each
+        
+                json_file_name = req_obj['displayName'] + '_final_.json'
+                res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
+                s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
+                s3object.put(Body=(bytes(json.dumps(parsed).encode('UTF-8'))))
+        data = {"uuid": req_obj['displayName'], "status":status}
+        if status == "Complete":
+            response_request = requests.post(callback, data=data)
+        print(json.dumps(data))
+        return json.dumps(data)
+    except Exception as e:
+        fail_logger(f"create_transcript failed: {e}")
+        raise
 
 # HELPER functions to convert Azure format into Stupid wudpecker format
 

@@ -19,6 +19,14 @@ celery_app.conf.task_routes = {
     "wudpecker-transcribe.tasks.*": {"queue": "wudpecker-transcribe_queue"},
 }
 
+def fail_logger(msg):
+    callback = os.getenv('FAIL_CALLBACK')
+    response = requests.post(callback, json={
+        "status": "fail",
+        "msg": msg
+    })
+    return response
+
 def transcribe_azure_detect_language(url, uuid, langs):
     azure_req_body = json.dumps(
         {'contentUrls': [url],
@@ -72,21 +80,25 @@ def transcribe_azure_manual(url, uuid, lang):
 
 @celery_app.task
 def create_transcript(uuid, url):
-    callback = os.getenv("CREATED_CALLBACK_URL")
-    langs = [
-                "en-US",
-                "da-DK",
-                "fr-FR",
-                "de-DE",
-                "pt-BR",
-                "ru-RU",
-                "es-ES",
-                "sv-SE",
-            ]
+    try:
+        callback = os.getenv("CREATED_CALLBACK_URL")
+        langs = [
+                    "en-US",
+                    "da-DK",
+                    "fr-FR",
+                    "de-DE",
+                    "pt-BR",
+                    "ru-RU",
+                    "es-ES",
+                    "sv-SE",
+                ]
 
-    transcript = transcribe_azure_detect_language(url, uuid, langs)
-    response_request = requests.post(callback, data=transcript)
-    return transcript
+        transcript = transcribe_azure_detect_language(url, uuid, langs)
+        response_request = requests.post(callback, data=transcript)
+        return transcript
+    except Exception as e:
+        fail_logger(f"create_transcript failed: {e}")
+        raise
 
 
 @celery_app.task

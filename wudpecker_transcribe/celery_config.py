@@ -370,6 +370,8 @@ def transcribe_deepgram(s3url, lang=None, nova=False):
     res = requests.get(os.getenv("DEEPGRAM_TOKEN"))
     token = json.loads(res.text)
     deepgram_key = "Token "+token
+    if nova:
+        deepgram_key = os.getenv("PROD_DEEPGRAM")
     model = "nova" if nova else "general-enhanced"
     if lang:
         url = f"https://api.deepgram.com/v1/listen?language={lang}&diarize=true&punctuate=true&utterances=true&numerals=true&model={model}&keywords=Wudpecker:1"

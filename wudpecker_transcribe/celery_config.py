@@ -110,7 +110,7 @@ def create_transcript_manual(uuid, url, lang):
         response_request = requests.post(callback, data=transcript)
         return transcript
     except Exception as e:
-        fail_logger(uuid,f"create_transcript failed: {e}")
+        fail_logger(uuid,f"create_transcript_manual failed: {e}")
         raise
 
 def lang_in_langs(lang, langs):
@@ -186,7 +186,7 @@ def deepgram_transcribe(uuid, url, langs=[]):
         response_request = requests.post(callback, data=data)
         return json.dumps(data)
     except Exception as e:
-        fail_logger(uuid,f"create_transcript failed: {e}")
+        fail_logger(uuid,f"deepgram failed: {e}")
         raise
 
 
@@ -230,7 +230,7 @@ def get_transcript(url):
         print(json.dumps(data))
         return json.dumps(data)
     except Exception as e:
-        fail_logger(req_obj['displayName'],f"create_transcript failed: {e}")
+        fail_logger(req_obj['displayName'],f"get_transcript failed: {e}")
         raise
 
 # HELPER functions to convert Azure format into Stupid wudpecker format

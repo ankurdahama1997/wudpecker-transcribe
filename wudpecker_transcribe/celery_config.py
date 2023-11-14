@@ -120,7 +120,8 @@ def lang_in_langs(lang, langs):
 def deepgram_transcribe(uuid, url, langs=[]):
     try:
         DEEPGRAM_LANGS = ['da', 'nl', 'en', 'en-US', 'nl', 'fr', 'de', 'hi', 'it', 'ja', 'ko', 'no', 'pl', 'pt', 'pt-BR', 'pt-PT', 'es', 'es-419', 'ta', 'sv']
-
+        NOVA_LANGS = ['en-US','es','en']
+        nova = all(lang_in_langs(lang, NOVA_LANGS) for lang in langs)
         callback = os.getenv("DONE_CALLBACK_URL")
         if (len(langs) == 1 and lang_in_langs(langs[0],DEEPGRAM_LANGS)):
             if langs[0] in DEEPGRAM_LANGS:
@@ -128,7 +129,7 @@ def deepgram_transcribe(uuid, url, langs=[]):
             else:
                 lang_code = langs[0].split('-')[0]
 
-            transcript = transcribe_deepgram(url, lang_code)
+            transcript = transcribe_deepgram(url, lang_code,nova=nova)
             status = 'DEEPGRAM_SINGLE'
         elif len(langs) == 1 and not lang_in_langs(langs[0],DEEPGRAM_LANGS):
             res = transcribe_azure_manual(url, uuid, langs[0])
@@ -139,7 +140,7 @@ def deepgram_transcribe(uuid, url, langs=[]):
             data = {"uuid": uuid, "status":status}
             return json.dumps(data)
         elif (len(langs) > 1 and all(lang_in_langs(lang, DEEPGRAM_LANGS) for lang in langs)) or len(langs)==0:
-            transcript = transcribe_deepgram(url)
+            transcript = transcribe_deepgram(url,nova=nova)
             status = 'DEEPGRAM_MULTI'
         else:
             res = transcribe_azure_detect_language(url, uuid, langs)
@@ -365,14 +366,15 @@ def ParseAzure(data):
         transcript["results"]["speaker_labels"]["segments"].append(phrase_obj)
     return transcript
 
-def transcribe_deepgram(s3url, lang=None):
+def transcribe_deepgram(s3url, lang=None, nova=False):
     res = requests.get(os.getenv("DEEPGRAM_TOKEN"))
     token = json.loads(res.text)
     deepgram_key = "Token "+token
+    model = "nova" if nova else "general-enhanced"
     if lang:
-        url = f"https://api.deepgram.com/v1/listen?language={lang}&diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced&keywords=Wudpecker:1"
+        url = f"https://api.deepgram.com/v1/listen?language={lang}&diarize=true&punctuate=true&utterances=true&numerals=true&model={model}&keywords=Wudpecker:1"
     else:
-        url = "https://api.deepgram.com/v1/listen?detect_language=true&diarize=true&punctuate=true&utterances=true&numerals=true&model=general-enhanced&keywords=Wudpecker:1"
+        url = f"https://api.deepgram.com/v1/listen?detect_language=true&diarize=true&punctuate=true&utterances=true&numerals=true&model={model}&keywords=Wudpecker:1"
     deepgram_request_data = json.dumps(
         {'url': s3url})
     deepgram_request = requests.post(url, headers={'Content-Type': 'application/json', 'Authorization': deepgram_key}, data=deepgram_request_data)

@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import requests
 import boto3
 import isodate
+import copy
 
 load_dotenv()
 
@@ -135,7 +136,7 @@ def deepgram_transcribe(uuid, url, langs=[]):
             res = transcribe_azure_manual(url, uuid, langs[0])
             if "self" not in res:
                 raise ValueError(f"Azure failed: {res}")
-            print(res, flush=True)
+            #print(res, flush=True)
             status = 'AZURE_SINGLE'
             data = {"uuid": uuid, "status":status}
             return json.dumps(data)
@@ -146,7 +147,7 @@ def deepgram_transcribe(uuid, url, langs=[]):
             res = transcribe_azure_detect_language(url, uuid, langs)
             if "self" not in res:
                 raise ValueError(f"Azure failed: {res}")
-            print(res,flush=True)
+            #print(res,flush=True)
             status = 'AZURE_MULTI'
             data = {"uuid": uuid, "status":status}
             return json.dumps(data)
@@ -164,12 +165,16 @@ def deepgram_transcribe(uuid, url, langs=[]):
             else:
                 formatted = parse_deepgram(transcript)
         except Exception as e:
-            print(transcript, flush=True)
+            #print(transcript, flush=True)
             failed_callback = os.getenv("FAILED_CALLBACK_URL")
             response_request = requests.post(failed_callback, data={"uuid": uuid, "status": "failed", "url": url})
             raise ValueError(f'Deepgram failed: {transcript}')
 
+        speakers = get_matched_speakers(uuid, formatted)
+        formatted = speaker_segments(formatted, speakers)
+        #formatted['results']["speakers"] = speakers
         json_file_name = uuid + '_final_.json'
+
         res = boto3.resource("s3", endpoint_url='https://s3.eu-central-1.amazonaws.com')
         s3object = res.Object(os.getenv("BUCKET_NAME"), json_file_name)
         s3object.put(Body=(bytes(json.dumps(formatted).encode('UTF-8'))))
@@ -190,6 +195,34 @@ def deepgram_transcribe(uuid, url, langs=[]):
         fail_logger(uuid,f"deepgram failed: {e}")
         raise
 
+def speaker_segments(transcript, speakers_mapping):
+    formatted = copy.deepcopy(transcript)
+    results = formatted.get("results", {})
+    transcripts = results.get("transcripts", [])
+    speaker_labels = results.get("speaker_labels", {})
+
+    if not transcripts or not speaker_labels:
+        return formatted
+
+    segments = speaker_labels.get("segments", [])
+
+    for segment in segments:
+        speaker_label = segment.get("speaker_label")
+        
+        # Find the speaker information in the mapping list
+        speaker_info = next((s for s in speakers_mapping if s['label'] == speaker_label), None)
+        if speaker_info:
+            speaker_name = speaker_info.get("name", f"Unknown")
+            if speaker_name == "Unknown":
+                speaker_name = f"Speaker {int(speaker_label.split('_')[-1])+1}"
+        else:
+            speaker_name = f"Speaker {int(speaker_label.split('_')[-1])+1}"
+
+        segment["speaker_name"] = speaker_name
+        for item in segment.get("items", []):
+            item.pop("speaker_name", None)
+
+    return formatted
 
 @celery_app.task
 def get_transcript(url):
@@ -228,13 +261,118 @@ def get_transcript(url):
         data = {"uuid": req_obj['displayName'], "status":status}
         if status == "Complete":
             response_request = requests.post(callback, data=data)
-        print(json.dumps(data))
+        #print(json.dumps(data))
         return json.dumps(data)
     except Exception as e:
         fail_logger(req_obj['displayName'],f"get_transcript failed: {e}")
         raise
 
 # HELPER functions to convert Azure format into Stupid wudpecker format
+def get_recall(uuid):
+    token = "5832f6593b0b2062bdb90ed84c858756ceab9e13"
+
+    url = f"https://api.recall.ai/api/v1/bot/{uuid}/speaker_timeline/"
+    headers = {
+        "accept": "application/json",
+        "Authorization": "token "+token,
+    }
+    response = requests.get(url, headers=headers)
+    data = json.loads(response.text)
+    return data
+
+def get_matched_speakers(uuid, transcript):
+    try:
+        azure = copy.deepcopy(transcript)
+        recall = get_recall(uuid)
+
+        #clean up
+        azure = azure["results"]["speaker_labels"]["segments"]
+        r = []
+        for segment in azure:
+            del segment["items"]
+            segment["start_time"] = int(float(segment["start_time"]))
+            segment["end_time"] = int(float(segment["end_time"]))
+            r.append(segment)
+        azure = r
+        
+        rec =[]
+        for segment in recall:
+            p = {
+                "start_time": int(segment["timestamp"]),
+                "speaker_name": segment["name"], 
+                "user_id": segment["user_id"]
+            }
+            rec.append(p)
+        recall = rec
+
+        speakers = list(set(d['speaker_label'] for d in azure))
+        
+        speakers.sort()
+        
+        test_segments = []
+        
+        for speaker in speakers:
+            count = 0
+            test_bunch = []
+            all_segs_of_speaker = [x for x in azure if x["speaker_label"] == speaker]
+            for seg in all_segs_of_speaker:
+                delta = seg["end_time"] - seg["start_time"]
+                if delta > 10:
+                    test_bunch.append(seg)
+                    count += 1
+                if count > 10:
+                    break
+                
+            test_segments.append(test_bunch)
+        
+        
+        
+        for speaker in test_segments:
+            for seg in speaker:
+                try:
+                    azure_start = seg["start_time"]
+                    # FIND THE AZURE START IN RECALL
+                    for recall_seg in recall:
+                        recall_start = recall_seg["start_time"]
+                        if azure_start - 4 <= recall_start <= azure_start + 4:
+                            seg["speaker_name"] = recall_seg["speaker_name"]
+                    if "speaker_name" not in seg:
+                        seg["speaker_name"] = "Unknown"
+                except:
+                    pass
+        
+        weights = []
+        for speaker in test_segments:
+            weight = {}
+            for test in speaker:
+                if test["speaker_name"] not in weight:
+                    weight[test["speaker_name"]] = 1
+                else:
+                    weight[test["speaker_name"]] += 1
+            weights.append(weight)
+        
+        result = []
+        
+        for weight in weights:
+            if weight:
+                winner = max(weight, key=lambda k: weight[k])
+                result.append(winner)
+            
+            
+        final_result = []
+
+        for i, res in enumerate(result):
+            spk_label = 'spk_' + str(i)
+            name = res
+            result_obj = {
+                "label": spk_label, "name": name, "primary": "no"
+            }
+            final_result.append(result_obj)
+
+
+        return final_result
+    except:
+        return []
 
 def PTtoSec(ptime):
     return isodate.parse_duration(ptime).total_seconds()

@@ -247,6 +247,8 @@ def get_transcript(url):
                 # parse Transcript
                 try:
                     parsed = make_speaker_matcher(combine_multiple_segments(ParseAzure(azure_transcript)))
+                    speakers = get_matched_speakers(req_obj['displayName'], parsed)
+                    parsed = speaker_segments(parsed, speakers)
                 except Exception as e:
                     data = {"uuid": req_obj['displayName'], "status": "EMPTY"}
                     requests.post(callback, data=data)
